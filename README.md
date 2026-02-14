@@ -23,3 +23,4 @@ Requires Python 3.10+ and PySide6.
 ```powershell
 pip install pyside6 pyinstaller
 python -m PyInstaller --onefile --windowed --icon=quick_anime_renamer_redux.ico quick_anime_renamer_redux.py
+![Quick Anime Renamer Redux screenshot](screenshot.png)
