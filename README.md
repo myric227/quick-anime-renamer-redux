@@ -1,6 +1,6 @@
 # Quick Anime Renamer Redux
 
-![Quick Anime Renamer Redux screenshot](screenshot.png v1)
+![Quick Anime Renamer Redux screenshot](screenshot.png )
 
 
 A modern Windows revival of **Quick Anime Renamer**.
