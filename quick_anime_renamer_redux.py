@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
@@ -8,15 +9,32 @@ from PySide6.QtWidgets import (
     QHeaderView, QMenuBar
 )
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings
 
 # -----------------------
 # App Info
 # -----------------------
 APP_NAME = "Quick Anime Renamer Redux"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.6"
 
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv"}
+
+
+def get_settings_path():
+    """INI file next to script or EXE."""
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "QuickAnimeRenamerRedux.ini")
+
+
+def settings_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 class AnimeRenamer(QWidget):
@@ -25,9 +43,9 @@ class AnimeRenamer(QWidget):
 
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.setWindowIcon(QIcon("quick_anime_renamer_redux.ico"))
-        self.resize(800, 500)
+        self.resize(820, 520)
 
-        self.settings = QSettings("AnimeTools", "QuickAnimeRenamerRedux")
+        self.settings = QSettings(get_settings_path(), QSettings.IniFormat)
 
         self.files = []
         self.rename_history = []
@@ -39,23 +57,19 @@ class AnimeRenamer(QWidget):
     # UI
     # -----------------------
     def build_ui(self):
-        main_layout = QVBoxLayout()
+        main = QVBoxLayout()
 
-        # Menu bar
         menu = QMenuBar()
         help_menu = menu.addMenu("Help")
-
         about_action = QAction("About", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
-
-        main_layout.setMenuBar(menu)
+        main.setMenuBar(menu)
 
         title = QLabel("Drag & Drop Anime Videos or Select a Folder")
-        title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        main_layout.addWidget(title)
+        title.setStyleSheet("font-size:16px;font-weight:bold;")
+        main.addWidget(title)
 
-        # Rules
         self.cb_brackets = QCheckBox("Remove [ ]")
         self.cb_parentheses = QCheckBox("Remove ( )")
         self.cb_curly = QCheckBox("Remove { }")
@@ -71,77 +85,108 @@ class AnimeRenamer(QWidget):
             self.cb_dots,
             self.cb_episode,
         ):
-            main_layout.addWidget(cb)
-            cb.stateChanged.connect(self.preview_files)
+            main.addWidget(cb)
+            cb.stateChanged.connect(self.on_option_changed)
 
-        # Buttons
-        btn_row = QHBoxLayout()
+        buttons = QHBoxLayout()
         self.btn_folder = QPushButton("Select Folder")
         self.btn_apply = QPushButton("Apply Rename")
         self.btn_undo = QPushButton("Undo Last Rename")
         self.btn_undo.setEnabled(False)
 
-        for btn in (self.btn_folder, self.btn_apply, self.btn_undo):
-            btn_row.addWidget(btn)
+        for b in (self.btn_folder, self.btn_apply, self.btn_undo):
+            buttons.addWidget(b)
 
-        main_layout.addLayout(btn_row)
+        main.addLayout(buttons)
 
-        # Preview table
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Original Name", "New Name"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
+        main.addWidget(self.table)
 
-        main_layout.addWidget(self.table)
-
-        self.setLayout(main_layout)
+        self.setLayout(main)
         self.setAcceptDrops(True)
 
-        # Signals
         self.btn_folder.clicked.connect(self.select_folder)
         self.btn_apply.clicked.connect(self.apply_rename)
         self.btn_undo.clicked.connect(self.undo_rename)
 
     # -----------------------
+    # Settings (FIXED)
+    # -----------------------
+    def set_checkbox_safely(self, checkbox, value):
+        checkbox.blockSignals(True)
+        checkbox.setChecked(value)
+        checkbox.blockSignals(False)
+
+    def load_settings(self):
+        self.set_checkbox_safely(
+            self.cb_brackets,
+            settings_bool(self.settings.value("remove_brackets"), True)
+        )
+        self.set_checkbox_safely(
+            self.cb_parentheses,
+            settings_bool(self.settings.value("remove_parentheses"), True)
+        )
+        self.set_checkbox_safely(
+            self.cb_curly,
+            settings_bool(self.settings.value("remove_curly"), False)
+        )
+        self.set_checkbox_safely(
+            self.cb_underscore,
+            settings_bool(self.settings.value("underscores"), True)
+        )
+        self.set_checkbox_safely(
+            self.cb_dots,
+            settings_bool(self.settings.value("dots"), False)
+        )
+        self.set_checkbox_safely(
+            self.cb_episode,
+            settings_bool(self.settings.value("episodes"), True)
+        )
+
+    def on_option_changed(self):
+        self.save_settings()
+        self.preview_files()
+
+    def save_settings(self):
+        self.settings.setValue("remove_brackets", self.cb_brackets.isChecked())
+        self.settings.setValue("remove_parentheses", self.cb_parentheses.isChecked())
+        self.settings.setValue("remove_curly", self.cb_curly.isChecked())
+        self.settings.setValue("underscores", self.cb_underscore.isChecked())
+        self.settings.setValue("dots", self.cb_dots.isChecked())
+        self.settings.setValue("episodes", self.cb_episode.isChecked())
+        self.settings.sync()
+
+    # -----------------------
     # Drag & Drop
     # -----------------------
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
 
-    def dropEvent(self, event):
+    def dropEvent(self, e):
         self.files.clear()
         self.table.setRowCount(0)
 
-        for url in event.mimeData().urls():
+        last_dir = None
+        for url in e.mimeData().urls():
             path = url.toLocalFile()
             if os.path.isfile(path) and self.is_video(path):
                 self.files.append(path)
+                last_dir = os.path.dirname(path)
+
+        if last_dir:
+            self.settings.setValue("last_dir", last_dir)
+            self.settings.sync()
 
         self.preview_files()
 
     # -----------------------
-    # Delete key removes from list
-    # -----------------------
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
-            rows = sorted(
-                {index.row() for index in self.table.selectionModel().selectedRows()},
-                reverse=True
-            )
-
-            for row in rows:
-                del self.files[row]
-                self.table.removeRow(row)
-
-            event.accept()
-        else:
-            super().keyPressEvent(event)
-
-    # -----------------------
-    # File Handling
+    # File handling
     # -----------------------
     def is_video(self, path):
         return os.path.splitext(path)[1].lower() in VIDEO_EXTENSIONS
@@ -149,9 +194,9 @@ class AnimeRenamer(QWidget):
     def select_folder(self):
         start = self.settings.value("last_dir", "")
         folder = QFileDialog.getExistingDirectory(self, "Select Folder", start)
-
         if folder:
             self.settings.setValue("last_dir", folder)
+            self.settings.sync()
             self.files = [
                 os.path.join(folder, f)
                 for f in os.listdir(folder)
@@ -160,32 +205,23 @@ class AnimeRenamer(QWidget):
             self.preview_files()
 
     # -----------------------
-    # Episode Detection
+    # Episode detection
     # -----------------------
     def detect_episode(self, name):
         m = re.search(r"[sS](\d{1,2})[eE](\d{1,4})", name)
         if m:
             return m.group(1), m.group(2)
-
         m = re.search(r"\b[eE][pP]? ?(\d{1,4})\b", name)
         if m:
             return None, m.group(1)
-
-        m = re.search(r"[ ._-](\d{1,4})[ ._-]", name)
-        if m:
-            return None, m.group(1)
-
         return None, None
 
     # -----------------------
-    # Rename Logic
+    # Rename logic
     # -----------------------
     def clean_name(self, filename):
         name, ext = os.path.splitext(filename)
-
-        season, episode = (
-            self.detect_episode(name) if self.cb_episode.isChecked() else (None, None)
-        )
+        season, ep = self.detect_episode(name) if self.cb_episode.isChecked() else (None, None)
 
         if self.cb_brackets.isChecked():
             name = re.sub(r"\[.*?\]", "", name)
@@ -194,25 +230,13 @@ class AnimeRenamer(QWidget):
         if self.cb_curly.isChecked():
             name = re.sub(r"\{.*?\}", "", name)
 
-        if episode is not None:
-            if season is not None:
-                name = re.sub(r"[ ._-]-?[ ._-]*[sS]\d{1,2}[eE]\d{1,4}", "", name)
-            else:
-                name = re.sub(r"\b[eE][pP]? ?\d{1,4}\b", "", name)
-                name = re.sub(r"[ ._-]\d{1,4}[ ._-]", " ", name)
+        name = name.replace("_", " ").replace(".", " ")
+        name = re.sub(r"\s+", " ", name).strip(" -")
 
-        if self.cb_underscore.isChecked():
-            name = name.replace("_", " ")
-        if self.cb_dots.isChecked():
-            name = name.replace(".", " ")
-
-        name = re.sub(r"\s*-\s*", " - ", name)
-        name = re.sub(" +", " ", name).strip(" -")
-
-        if episode is not None:
-            if season is not None:
-                return f"{name} - S{season.zfill(2)} - {episode}{ext}"
-            return f"{name} - {episode}{ext}"
+        if ep:
+            if season:
+                return f"{name} - S{season.zfill(2)} - {ep}{ext}"
+            return f"{name} - {ep}{ext}"
 
         return f"{name}{ext}"
 
@@ -221,70 +245,33 @@ class AnimeRenamer(QWidget):
     # -----------------------
     def preview_files(self):
         self.table.setRowCount(0)
-
         for f in self.files:
-            old = os.path.basename(f)
-            new = self.clean_name(old)
-
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(old))
-            self.table.setItem(row, 1, QTableWidgetItem(new))
-
-        self.save_settings()
+            self.table.setItem(row, 0, QTableWidgetItem(os.path.basename(f)))
+            self.table.setItem(row, 1, QTableWidgetItem(self.clean_name(os.path.basename(f))))
 
     # -----------------------
     # Apply / Undo
     # -----------------------
     def apply_rename(self):
         self.rename_history.clear()
-
         for f in self.files:
-            folder = os.path.dirname(f)
-            old = os.path.basename(f)
-            new = self.clean_name(old)
-
-            old_path = f
-            new_path = os.path.join(folder, new)
-
-            if old_path != new_path:
-                os.rename(old_path, new_path)
-                self.rename_history.append((old_path, new_path))
-
+            new_name = self.clean_name(os.path.basename(f))
+            new_path = os.path.join(os.path.dirname(f), new_name)
+            if f != new_path:
+                os.rename(f, new_path)
+                self.rename_history.append((f, new_path))
         if self.rename_history:
             self.btn_undo.setEnabled(True)
-            QMessageBox.information(self, "Done", "Files renamed successfully.")
-
-        self.table.setRowCount(0)
+            QMessageBox.information(self, "Done", "Files renamed.")
 
     def undo_rename(self):
         for old, new in reversed(self.rename_history):
             if os.path.exists(new):
                 os.rename(new, old)
-
         self.rename_history.clear()
         self.btn_undo.setEnabled(False)
-
-        QMessageBox.information(self, "Undo", "Last rename operation has been undone.")
-
-    # -----------------------
-    # Settings
-    # -----------------------
-    def save_settings(self):
-        self.settings.setValue("brackets", self.cb_brackets.isChecked())
-        self.settings.setValue("parentheses", self.cb_parentheses.isChecked())
-        self.settings.setValue("curly", self.cb_curly.isChecked())
-        self.settings.setValue("underscore", self.cb_underscore.isChecked())
-        self.settings.setValue("dots", self.cb_dots.isChecked())
-        self.settings.setValue("episode", self.cb_episode.isChecked())
-
-    def load_settings(self):
-        self.cb_brackets.setChecked(self.settings.value("brackets", True, bool))
-        self.cb_parentheses.setChecked(self.settings.value("parentheses", True, bool))
-        self.cb_curly.setChecked(self.settings.value("curly", False, bool))
-        self.cb_underscore.setChecked(self.settings.value("underscore", True, bool))
-        self.cb_dots.setChecked(self.settings.value("dots", False, bool))
-        self.cb_episode.setChecked(self.settings.value("episode", True, bool))
 
     # -----------------------
     # About
@@ -293,19 +280,10 @@ class AnimeRenamer(QWidget):
         QMessageBox.about(
             self,
             f"About {APP_NAME}",
-            f"""
-<b>{APP_NAME}</b><br>
-Version {APP_VERSION}<br><br>
-
-<b>Created by Justin Morland</b><br><br>
-
-Inspired by the original <i>Quick Anime Renamer</i><br>
-by <b>Joshua Park</b>.<br><br>
-
-<i>Not affiliated with the original project.</i><br><br>
-
-© 2026
-"""
+            f"{APP_NAME} v{APP_VERSION}\n\n"
+            "Created by Justin Morland\n\n"
+            "Inspired by Quick Anime Renamer\n"
+            "Not affiliated."
         )
 
 
@@ -313,7 +291,7 @@ by <b>Joshua Park</b>.<br><br>
 # Run
 # -----------------------
 if __name__ == "__main__":
-    app = QApplication([])
+    app = QApplication(sys.argv)
     window = AnimeRenamer()
     window.show()
-    app.exec()
+    sys.exit(app.exec())
