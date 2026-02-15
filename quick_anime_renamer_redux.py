@@ -7,14 +7,14 @@ from PySide6.QtWidgets import (
     QMessageBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QMenuBar
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import QSettings, Qt
 
 # -----------------------
 # App Info
 # -----------------------
 APP_NAME = "Quick Anime Renamer Redux"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".wmv"}
 
@@ -24,6 +24,7 @@ class AnimeRenamer(QWidget):
         super().__init__()
 
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.setWindowIcon(QIcon("quick_anime_renamer_redux.ico"))
         self.resize(800, 500)
 
         self.settings = QSettings("AnimeTools", "QuickAnimeRenamerRedux")
@@ -63,20 +64,24 @@ class AnimeRenamer(QWidget):
         self.cb_episode = QCheckBox("Auto-detect episode numbers")
 
         for cb in (
-            self.cb_brackets, self.cb_parentheses, self.cb_curly,
-            self.cb_underscore, self.cb_dots, self.cb_episode
+            self.cb_brackets,
+            self.cb_parentheses,
+            self.cb_curly,
+            self.cb_underscore,
+            self.cb_dots,
+            self.cb_episode,
         ):
             main_layout.addWidget(cb)
+            cb.stateChanged.connect(self.preview_files)
 
         # Buttons
         btn_row = QHBoxLayout()
         self.btn_folder = QPushButton("Select Folder")
-        self.btn_preview = QPushButton("Preview")
         self.btn_apply = QPushButton("Apply Rename")
         self.btn_undo = QPushButton("Undo Last Rename")
         self.btn_undo.setEnabled(False)
 
-        for btn in (self.btn_folder, self.btn_preview, self.btn_apply, self.btn_undo):
+        for btn in (self.btn_folder, self.btn_apply, self.btn_undo):
             btn_row.addWidget(btn)
 
         main_layout.addLayout(btn_row)
@@ -96,7 +101,6 @@ class AnimeRenamer(QWidget):
 
         # Signals
         self.btn_folder.clicked.connect(self.select_folder)
-        self.btn_preview.clicked.connect(self.preview_files)
         self.btn_apply.clicked.connect(self.apply_rename)
         self.btn_undo.clicked.connect(self.undo_rename)
 
@@ -159,12 +163,10 @@ class AnimeRenamer(QWidget):
     # Episode Detection
     # -----------------------
     def detect_episode(self, name):
-        # Season + episode (S02E06)
         m = re.search(r"[sS](\d{1,2})[eE](\d{1,4})", name)
         if m:
             return m.group(1), m.group(2)
 
-        # Episode only
         m = re.search(r"\b[eE][pP]? ?(\d{1,4})\b", name)
         if m:
             return None, m.group(1)
@@ -185,7 +187,6 @@ class AnimeRenamer(QWidget):
             self.detect_episode(name) if self.cb_episode.isChecked() else (None, None)
         )
 
-        # Remove junk tags
         if self.cb_brackets.isChecked():
             name = re.sub(r"\[.*?\]", "", name)
         if self.cb_parentheses.isChecked():
@@ -193,7 +194,6 @@ class AnimeRenamer(QWidget):
         if self.cb_curly.isChecked():
             name = re.sub(r"\{.*?\}", "", name)
 
-        # Remove episode tokens
         if episode is not None:
             if season is not None:
                 name = re.sub(r"[ ._-]-?[ ._-]*[sS]\d{1,2}[eE]\d{1,4}", "", name)
@@ -206,11 +206,9 @@ class AnimeRenamer(QWidget):
         if self.cb_dots.isChecked():
             name = name.replace(".", " ")
 
-        # Normalize spacing
         name = re.sub(r"\s*-\s*", " - ", name)
         name = re.sub(" +", " ", name).strip(" -")
 
-        # Rebuild
         if episode is not None:
             if season is not None:
                 return f"{name} - S{season.zfill(2)} - {episode}{ext}"
